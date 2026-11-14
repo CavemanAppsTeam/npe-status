@@ -3,14 +3,16 @@ owner: CavemanAppsTeam
 repo: npe-status
 
 sites:
+  - name: NPE production homepage
+    url: https://northpacificelectric.com/
   - name: NPE Worker homepage
     url: https://north-pacific-electric.gabriel-049.workers.dev/
-  - name: NPE Pages proxy
-    url: https://cavemanapps-demos.pages.dev/north-pacific-electric/
   - name: Estimate
-    url: https://north-pacific-electric.gabriel-049.workers.dev/estimate/
+    url: https://northpacificelectric.com/estimate/
   - name: Services
-    url: https://north-pacific-electric.gabriel-049.workers.dev/services/
+    url: https://northpacificelectric.com/services/
+  - name: Contact
+    url: https://northpacificelectric.com/contact/
 
 assignees:
   - gabrielcaveman
@@ -19,12 +21,12 @@ status-website:
   baseUrl: /npe-status
   name: North Pacific Electric Status
   introTitle: "**NPE** service status"
-  introMessage: Uptime for the North Pacific Electric web stack (Cloudflare Workers + Pages). Alerts go to the ops WhatsApp via Larry-Brain.
+  introMessage: Uptime for the North Pacific Electric web stack. Failure alerts and a daily 09:00 America/Los_Angeles digest go to ops email (REDACTED_OPS@example.com) via the Caveman bridge + n8n.
   logoUrl: https://north-pacific-electric.gabriel-049.workers.dev/assets/brand/npe-logo-200.webp
   navbar:
     - title: Status
       href: /
     - title: Site
-      href: https://north-pacific-electric.gabriel-049.workers.dev/
+      href: https://northpacificelectric.com/
     - title: GitHub
       href: https://github.com/$OWNER/$REPO
