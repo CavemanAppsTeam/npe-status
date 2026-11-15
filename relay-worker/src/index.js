@@ -21,10 +21,6 @@ const ALERT_RECIPIENTS = [
   "REDACTED_ALERTS@example.com",
 ];
 const STATUS_PAGE = "https://cavemanappsteam.github.io/npe-status/";
-const FROM_MAILCHANNELS = {
-  email: "REDACTED_FROM@example.com",
-  name: "NPE Status",
-};
 const FROM_RESEND = {
   email: "REDACTED_FROM@example.com",
   name: "NPE Status",
@@ -93,40 +89,9 @@ async function sendResend(env, subject, body) {
   return { ok: true, provider: "resend", data };
 }
 
-async function sendMailchannels(subject, body) {
-  const res = await fetch("https://api.mailchannels.net/tx/v1/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      personalizations: [
-        { to: ALERT_RECIPIENTS.map((email) => ({ email })) },
-      ],
-      from: FROM_MAILCHANNELS,
-      subject,
-      content: [{ type: "text/plain", value: body }],
-    }),
-  });
-  const raw = await res.text();
-  let data = raw;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    /* plain text */
-  }
-  if (!res.ok) return { ok: false, status: res.status, data };
-  return { ok: true, provider: "mailchannels", data };
-}
-
 async function sendEmail(env, subject, text) {
   const body = emailBody(text);
-  const resend = await sendResend(env, subject, body);
-  if (resend.ok) return resend;
-  if (!resend.skipped) {
-    const mc = await sendMailchannels(subject, body);
-    if (mc.ok) return { ...mc, resendError: resend };
-    return { ok: false, resend, mailchannels: mc };
-  }
-  return sendMailchannels(subject, body);
+  return sendResend(env, subject, body);
 }
 
 const PACIFIC = "America/Los_Angeles";

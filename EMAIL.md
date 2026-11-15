@@ -1,6 +1,6 @@
 # NPE status email (Resend)
 
-Standalone email path for this repository. It does **not** depend on Larry-Brain.
+Standalone email path for this repository. It does **not** depend on Larry-Brain, WhatsApp, Gmail OAuth, or n8n.
 
 ## Flow
 
@@ -13,12 +13,14 @@ Upptime (this repo, GitHub Actions)
 
 Daily digest (always, all monitors up or down):
   Worker cron at 09:00 America/Los_Angeles
-  → POST-equivalent sendDailyDigest
+  → sendDailyDigest
   → same recipients
 
 Every alert email also appends the full monitor list
 (uptime + response time for each site).
 ```
+
+Email is sent **only** through Resend. There is no Mailchannels fallback and no parallel n8n alert path.
 
 ## Resend
 
@@ -50,13 +52,3 @@ npx wrangler deploy
 | --- | --- |
 | `NOTIFICATION_CUSTOM_WEBHOOK` | `true` |
 | `NOTIFICATION_CUSTOM_WEBHOOK_URL` | `https://npe-uptime-relay.gabriel-049.workers.dev/?token=<UPTIME_RELAY_TOKEN>` |
-
-## n8n workflows
-
-Import from `n8n/`:
-
-- `NPE Upptime · Alert email poller`
-- `NPE Upptime · Daily digest 09:00 PT` (optional; the Worker cron already sends this digest)
-
-Credential: Header Auth `Authorization: Bearer <UPTIME_RELAY_TOKEN>` named **NPE Uptime Relay Bearer**.
-Email is sent by the Worker (Resend), not by Gmail OAuth in n8n.
