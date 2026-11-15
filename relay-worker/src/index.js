@@ -1,0 +1,341 @@
+/**
+ * Public relay for Upptime custom webhooks (npe-status).
+ * Stores alerts in KV and emails ALERT_RECIPIENTS via Resend.
+ *
+ * Auth: Authorization: Bearer <UPTIME_RELAY_TOKEN>
+ * POST / or /ingest — ingest alert → email + KV
+ * GET  /pending     — list pending alerts
+ * POST /claim       — { ids: string[] } mark delivered
+ * POST /email       — { text } send alert email
+ * POST /digest      — { summary } or { auto: true }
+ * GET  /summary     — preview auto digest text
+ * GET  /health      — ok
+ * Cron              — 09:00 America/Los_Angeles daily digest (UTC 16:00 and 17:00; sends only at local hour 9)
+ *
+ * Secrets (Wrangler): UPTIME_RELAY_TOKEN, RESEND_API_KEY, GITHUB_TOKEN
+ * Local copies live outside git: [LOCAL_SECRETS_DIR]\.env
+ */
+
+const ALERT_RECIPIENTS = [
+  "REDACTED_OPS@example.com",
+  "REDACTED_ALERTS@example.com",
+];
+const STATUS_PAGE = "https://cavemanappsteam.github.io/npe-status/";
+const FROM_MAILCHANNELS = {
+  email: "REDACTED_FROM@example.com",
+  name: "NPE Status",
+};
+const FROM_RESEND = {
+  email: "REDACTED_FROM@example.com",
+  name: "NPE Status",
+};
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...cors },
+  });
+}
+
+function unauthorized() {
+  return json({ error: "unauthorized" }, 401);
+}
+
+function authed(request, env) {
+  const token = String(env.UPTIME_RELAY_TOKEN || "").trim();
+  if (!token) return false;
+  const header = request.headers.get("Authorization") || "";
+  if (header === `Bearer ${token}`) return true;
+  const url = new URL(request.url);
+  return url.searchParams.get("token") === token;
+}
+
+function subjectFromText(text) {
+  const t = String(text || "");
+  if (/\bUP\b|recovered|back online|restored/i.test(t)) return `[NPE] UP — monitor recovered`;
+  if (/\bDOWN\b|degraded|offline|failed/i.test(t)) return `[NPE] DOWN — monitor alert`;
+  return `[NPE] Status alert`;
+}
+
+function emailBody(text) {
+  return [
+    String(text || "").trim(),
+    "",
+    `Status page: ${STATUS_PAGE}`,
+    `Repo: https://github.com/CavemanAppsTeam/npe-status`,
+  ].join("\n");
+}
+
+async function sendResend(env, subject, body) {
+  const key = String(env.RESEND_API_KEY || "").trim();
+  if (!key) return { ok: false, skipped: "no-resend-key" };
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: `${FROM_RESEND.name} <${FROM_RESEND.email}>`,
+      to: ALERT_RECIPIENTS,
+      subject,
+      text: body,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, status: res.status, data };
+  return { ok: true, provider: "resend", data };
+}
+
+async function sendMailchannels(subject, body) {
+  const res = await fetch("https://api.mailchannels.net/tx/v1/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      personalizations: [
+        { to: ALERT_RECIPIENTS.map((email) => ({ email })) },
+      ],
+      from: FROM_MAILCHANNELS,
+      subject,
+      content: [{ type: "text/plain", value: body }],
+    }),
+  });
+  const raw = await res.text();
+  let data = raw;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    /* plain text */
+  }
+  if (!res.ok) return { ok: false, status: res.status, data };
+  return { ok: true, provider: "mailchannels", data };
+}
+
+async function sendEmail(env, subject, text) {
+  const body = emailBody(text);
+  const resend = await sendResend(env, subject, body);
+  if (resend.ok) return resend;
+  if (!resend.skipped) {
+    const mc = await sendMailchannels(subject, body);
+    if (mc.ok) return { ...mc, resendError: resend };
+    return { ok: false, resend, mailchannels: mc };
+  }
+  return sendMailchannels(subject, body);
+}
+
+const PACIFIC = "America/Los_Angeles";
+
+function pacificNow(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: PACIFIC,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || "";
+  return {
+    day: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: Number(get("hour")),
+  };
+}
+
+async function sendAlertEmail(env, text) {
+  const summary = await buildStatusSummary(env);
+  return sendEmail(env, subjectFromText(text), `${text}\n\n${summary}`);
+}
+
+const DIGEST_MONITORS = [
+  { slug: "npe-production-homepage", label: "NPE production homepage" },
+  { slug: "npe-worker-homepage", label: "NPE Worker homepage" },
+  { slug: "estimate", label: "Estimate" },
+  { slug: "services", label: "Services" },
+  { slug: "contact", label: "Contact" },
+];
+
+async function githubRawJson(env, path) {
+  const token = String(env.GITHUB_TOKEN || "").trim();
+  if (!token) return null;
+  const res = await fetch(
+    `https://api.github.com/repos/CavemanAppsTeam/npe-status/contents/${path}`,
+    {
+      headers: {
+        Accept: "application/vnd.github.raw",
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "npe-uptime-relay",
+      },
+    },
+  );
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+async function buildStatusSummary(env) {
+  const lines = ["Monitors (production Core + Worker):"];
+  let any = false;
+  for (const m of DIGEST_MONITORS) {
+    const up = await githubRawJson(env, `api/${m.slug}/uptime.json`);
+    const rt = await githubRawJson(env, `api/${m.slug}/response-time.json`);
+    const upMsg = up && up.message ? String(up.message) : "?";
+    const rtMsg = rt && rt.message ? String(rt.message) : "?";
+    lines.push(`- ${m.label}: uptime ${upMsg}, response ${rtMsg}`);
+    if (up || rt) any = true;
+  }
+  if (!any) {
+    lines.push(
+      "(Could not load GitHub API metrics — set GITHUB_TOKEN on the Worker, or open the status page.)",
+    );
+  }
+  lines.push("", `Status page: ${STATUS_PAGE}`);
+  return lines.join("\n");
+}
+
+async function sendDailyDigest(env) {
+  const { day } = pacificNow();
+  const summary = await buildStatusSummary(env);
+  return sendEmail(
+    env,
+    `[NPE] Daily status · ${day}`,
+    `NPE status · daily digest · ${day}\n\n${summary}`,
+  );
+}
+
+async function listPending(env, limit = 50) {
+  const listed = await env.ALERTS.list({ prefix: "pending:", limit });
+  const out = [];
+  for (const key of listed.keys) {
+    const raw = await env.ALERTS.get(key.name);
+    if (!raw) continue;
+    try {
+      out.push(JSON.parse(raw));
+    } catch {
+      out.push({ id: key.name, text: raw });
+    }
+  }
+  out.sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+  return out;
+}
+
+export default {
+  async scheduled(_event, env, ctx) {
+    const { hour, day } = pacificNow();
+    if (hour !== 9) return;
+    const key = `digest-sent:${day}`;
+    if (await env.ALERTS.get(key)) return;
+    const email = await sendDailyDigest(env);
+    if (!email.ok) throw new Error("daily digest email failed");
+    ctx.waitUntil(
+      env.ALERTS.put(key, new Date().toISOString(), {
+        expirationTtl: 60 * 60 * 36,
+      }),
+    );
+  },
+
+  async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: cors });
+    }
+
+    const url = new URL(request.url);
+
+    if (request.method === "GET" && url.pathname === "/health") {
+      return json({ ok: true, service: "npe-uptime-relay", emailTo: ALERT_RECIPIENTS });
+    }
+
+    if (!authed(request, env)) return unauthorized();
+
+    if (request.method === "POST" && (url.pathname === "/" || url.pathname === "/ingest")) {
+      const contentType = request.headers.get("Content-Type") || "";
+      let text = "";
+      let payload = null;
+      if (contentType.includes("application/json")) {
+        payload = await request.json().catch(() => null);
+        text =
+          (payload && (payload.text || payload.message || payload.content)) ||
+          JSON.stringify(payload);
+      } else {
+        text = await request.text();
+      }
+      text = String(text || "").trim();
+      if (!text) return json({ error: "empty body" }, 400);
+
+      const id = crypto.randomUUID();
+      const record = {
+        id,
+        at: new Date().toISOString(),
+        source: "upptime",
+        text: text.slice(0, 4000),
+        payload: payload && typeof payload === "object" ? payload : undefined,
+      };
+      await env.ALERTS.put(`pending:${id}`, JSON.stringify(record), {
+        expirationTtl: 60 * 60 * 24 * 7,
+      });
+
+      const email = await sendAlertEmail(env, record.text);
+      if (email.ok) {
+        await env.ALERTS.put(`done:${id}`, JSON.stringify({ ...record, emailed: true }), {
+          expirationTtl: 60 * 60 * 24 * 30,
+        });
+        await env.ALERTS.delete(`pending:${id}`);
+      }
+
+      return json({ ok: true, id, email });
+    }
+
+    if (request.method === "GET" && url.pathname === "/pending") {
+      const pending = await listPending(env);
+      return json({ ok: true, count: pending.length, pending });
+    }
+
+    if (request.method === "POST" && url.pathname === "/claim") {
+      const body = await request.json().catch(() => ({}));
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      let claimed = 0;
+      for (const id of ids) {
+        const key = id.startsWith("pending:") ? id : `pending:${id}`;
+        const raw = await env.ALERTS.get(key);
+        if (!raw) continue;
+        await env.ALERTS.put(`done:${id.replace(/^pending:/, "")}`, raw, {
+          expirationTtl: 60 * 60 * 24 * 30,
+        });
+        await env.ALERTS.delete(key);
+        claimed += 1;
+      }
+      return json({ ok: true, claimed });
+    }
+
+    if (request.method === "POST" && url.pathname === "/email") {
+      const body = await request.json().catch(() => ({}));
+      const text = String(body.text || body.summary || "").trim();
+      if (!text) return json({ error: "missing text" }, 400);
+      const email = await sendAlertEmail(env, text);
+      if (!email.ok) return json({ ok: false, email }, 502);
+      return json({ ok: true, email });
+    }
+
+    if (request.method === "POST" && url.pathname === "/digest") {
+      const body = await request.json().catch(() => ({}));
+      const custom = String(body.summary || body.text || "").trim();
+      const useAuto = !custom || body.auto === true;
+      const email = useAuto
+        ? await sendDailyDigest(env)
+        : await sendEmail(env, `[NPE] Daily status · ${pacificNow().day}`, custom);
+      if (!email.ok) return json({ ok: false, email }, 502);
+      return json({ ok: true, email });
+    }
+
+    if (request.method === "GET" && url.pathname === "/summary") {
+      const summary = await buildStatusSummary(env);
+      return json({ ok: true, summary });
+    }
+
+    return json({ error: "not found" }, 404);
+  },
+};

@@ -1,0 +1,12 @@
+name = "npe-uptime-relay"
+main = "src/index.js"
+compatibility_date = "2026-11-14"
+workers_dev = true
+
+[triggers]
+crons = ["0 16 * * *", "0 17 * * *"]
+
+[[kv_namespaces]]
+binding = "ALERTS"
+id = "a17c658103014972993b491012ca9d13"
+preview_id = "a17c658103014972993b491012ca9d13"

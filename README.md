@@ -26,6 +26,10 @@ With [Upptime](https://upptime.js.org), you can get your own unlimited and free 
 
 [**Visit our status website →**](https://CavemanAppsTeam.github.io/npe-status)
 
+## Email alerts (Resend)
+
+Failure webhooks and the daily digest are handled by the Worker in [`relay-worker/`](./relay-worker/) and documented in [`EMAIL.md`](./EMAIL.md). Secrets stay outside this repo at `[LOCAL_SECRETS_DIR]\.env`.
+
 ## 📄 License
 
 - Powered by: [Upptime](https://github.com/upptime/upptime)

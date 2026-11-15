@@ -1,0 +1,18 @@
+# Secrets / local env (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local tooling
+node_modules/
+.wrangler/
+.dev.vars
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp

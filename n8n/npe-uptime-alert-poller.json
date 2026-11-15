@@ -1,0 +1,112 @@
+{
+  "id": "npeUptimeAlertPoller01",
+  "name": "NPE Upptime · Alert email poller",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 1 }]
+        }
+      },
+      "id": "sched-alert",
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://npe-uptime-relay.gabriel-049.workers.dev/pending",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-pending",
+      "name": "GET pending alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NPE_UPTIME_RELAY_AUTH",
+          "name": "NPE Uptime Relay Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json;\nconst pending = Array.isArray(data.pending) ? data.pending : [];\nif (!pending.length) return [];\nreturn pending.map((p) => ({ json: p }));"
+      },
+      "id": "split-pending",
+      "name": "Split pending",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://npe-uptime-relay.gabriel-049.workers.dev/email",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: ($json.text || JSON.stringify($json)) }) }}",
+        "options": {}
+      },
+      "id": "email-via-relay",
+      "name": "Email via relay",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NPE_UPTIME_RELAY_AUTH",
+          "name": "NPE Uptime Relay Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://npe-uptime-relay.gabriel-049.workers.dev/claim",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ids: [$('Split pending').item.json.id] }) }}",
+        "options": {}
+      },
+      "id": "claim",
+      "name": "Claim alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NPE_UPTIME_RELAY_AUTH",
+          "name": "NPE Uptime Relay Bearer"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every minute": {
+      "main": [[{ "node": "GET pending alerts", "type": "main", "index": 0 }]]
+    },
+    "GET pending alerts": {
+      "main": [[{ "node": "Split pending", "type": "main", "index": 0 }]]
+    },
+    "Split pending": {
+      "main": [[{ "node": "Email via relay", "type": "main", "index": 0 }]]
+    },
+    "Email via relay": {
+      "main": [[{ "node": "Claim alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles"
+  }
+}
