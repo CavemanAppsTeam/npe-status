@@ -5,7 +5,7 @@ Standalone email path for this repository. It does **not** depend on Larry-Brain
 ## Flow
 
 ```text
-Upptime (this repo, GitHub Actions) — probes from Seattle via Globalping
+Upptime (this repo, GitHub Actions)
   → POST https://npe-uptime-relay.gabriel-049.workers.dev/?token=…
   → Cloudflare Worker (relay-worker/) emails via Resend
   → REDACTED_OPS@example.com
@@ -17,7 +17,7 @@ Daily digest (always, all monitors up or down):
   → same recipients
 
 Every alert email also appends the full monitor list
-(uptime + response time for each site, probed from Seattle).
+(uptime + response time for each site).
 ```
 
 Email is sent **only** through Resend. There is no Mailchannels fallback and no parallel n8n alert path.
@@ -27,10 +27,6 @@ Email is sent **only** through Resend. There is no Mailchannels fallback and no 
 The Worker authors every outbound subject and body in English. Webhook or API caller text is used only to classify the alert as UP, DOWN, or generic. Raw caller strings (including Portuguese Upptime secrets such as `NOTIFICATIONS_DOWN_MESSAGE` / `NOTIFICATIONS_UP_MESSAGE`) are never pasted into the email.
 
 `POST /digest` always sends the fixed English daily digest. Custom `summary` / `text` bodies are ignored.
-
-## Seattle probes
-
-Uptime checks use Globalping with `locations: [Seattle]` in `.upptimerc.yml`. The GitHub Actions secret `GLOBALPING_TOKEN` must be set for Seattle placement. Without it, Upptime cannot pin the probe to Seattle.
 
 ## Resend
 
@@ -62,4 +58,3 @@ npx wrangler deploy
 | --- | --- |
 | `NOTIFICATION_CUSTOM_WEBHOOK` | `true` |
 | `NOTIFICATION_CUSTOM_WEBHOOK_URL` | `https://npe-uptime-relay.gabriel-049.workers.dev/?token=<UPTIME_RELAY_TOKEN>` |
-| `GLOBALPING_TOKEN` | Globalping API token for Seattle probes (never commit this value) |

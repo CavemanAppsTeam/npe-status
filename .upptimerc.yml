@@ -17,14 +17,11 @@ sites:
 assignees:
   - gabrielcaveman
 
-locations:
-  - Seattle
-
 status-website:
   baseUrl: /npe-status
   name: North Pacific Electric Status
   introTitle: "**NPE** service status"
-  introMessage: Uptime for the North Pacific Electric web stack, probed from Seattle. Failure alerts and a daily 09:00 Seattle (America/Los_Angeles) digest go to ops email (REDACTED_OPS@example.com) via Resend (see EMAIL.md in this repo).
+  introMessage: Uptime for the North Pacific Electric web stack. Failure alerts and a daily 09:00 Seattle (America/Los_Angeles) digest go to ops email (REDACTED_OPS@example.com) via Resend (see EMAIL.md in this repo).
   logoUrl: https://north-pacific-electric.gabriel-049.workers.dev/assets/brand/npe-logo-200.webp
   navbar:
     - title: Status
