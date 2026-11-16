@@ -3,14 +3,17 @@
  * Stores alerts in KV and emails ALERT_RECIPIENTS via Resend.
  *
  * Auth: Authorization: Bearer <UPTIME_RELAY_TOKEN>
- * POST / or /ingest — ingest alert → email + KV
+ * POST / or /ingest — ingest alert → English email + KV
  * GET  /pending     — list pending alerts
  * POST /claim       — { ids: string[] } mark delivered
- * POST /email       — { text } send alert email
- * POST /digest      — { summary } or { auto: true }
+ * POST /email       — { text } classify up/down; send English alert email
+ * POST /digest      — always send the English daily digest
  * GET  /summary     — preview auto digest text
  * GET  /health      — ok
- * Cron              — 09:00 America/Los_Angeles daily digest (UTC 16:00 and 17:00; sends only at local hour 9)
+ * Cron              — 09:00 Seattle (America/Los_Angeles) daily digest
+ *                     (UTC 16:00 and 17:00; sends only at local hour 9)
+ *
+ * Outbound mail bodies are Worker-authored English only. Caller text is never pasted.
  *
  * Secrets (Wrangler): UPTIME_RELAY_TOKEN, RESEND_API_KEY, GITHUB_TOKEN
  * Local copies live outside git: [LOCAL_SECRETS_DIR]\.env
@@ -52,11 +55,33 @@ function authed(request, env) {
   return url.searchParams.get("token") === token;
 }
 
-function subjectFromText(text) {
+/** Classify webhook/caller text into a fixed alert kind. Raw text is never emailed. */
+export function alertKindFromText(text) {
   const t = String(text || "");
-  if (/\bUP\b|recovered|back online|restored/i.test(t)) return `[NPE] UP — monitor recovered`;
-  if (/\bDOWN\b|degraded|offline|failed/i.test(t)) return `[NPE] DOWN — monitor alert`;
-  return `[NPE] Status alert`;
+  if (/\bUP\b|recovered|back online|restored/i.test(t)) return "up";
+  if (/\bDOWN\b|degraded|offline|failed/i.test(t)) return "down";
+  return "generic";
+}
+
+export function subjectFromText(text) {
+  const kind = alertKindFromText(text);
+  if (kind === "up") return "[NPE] UP — monitor recovered";
+  if (kind === "down") return "[NPE] DOWN — monitor alert";
+  return "[NPE] Status alert";
+}
+
+export function englishAlertLine(kind) {
+  if (kind === "up") return "Monitor recovered (UP).";
+  if (kind === "down") return "Monitor alert (DOWN).";
+  return "Status alert.";
+}
+
+export function composeAlertBody(kind, summary) {
+  return `${englishAlertLine(kind)}\n\n${summary}`;
+}
+
+export function composeDigestIntro(day) {
+  return `NPE status · daily digest · ${day} · 09:00 Seattle time`;
 }
 
 function emailBody(text) {
@@ -113,8 +138,9 @@ function pacificNow(date = new Date()) {
 }
 
 async function sendAlertEmail(env, text) {
+  const kind = alertKindFromText(text);
   const summary = await buildStatusSummary(env);
-  return sendEmail(env, subjectFromText(text), `${text}\n\n${summary}`);
+  return sendEmail(env, subjectFromText(text), composeAlertBody(kind, summary));
 }
 
 const DIGEST_MONITORS = [
@@ -142,8 +168,11 @@ async function githubRawJson(env, path) {
   return res.json().catch(() => null);
 }
 
+export const MONITOR_SUMMARY_HEADING =
+  "Monitors (production Core + Worker, probed from Seattle):";
+
 async function buildStatusSummary(env) {
-  const lines = ["Monitors (production Core + Worker):"];
+  const lines = [MONITOR_SUMMARY_HEADING];
   let any = false;
   for (const m of DIGEST_MONITORS) {
     const up = await githubRawJson(env, `api/${m.slug}/uptime.json`);
@@ -168,7 +197,7 @@ async function sendDailyDigest(env) {
   return sendEmail(
     env,
     `[NPE] Daily status · ${day}`,
-    `NPE status · daily digest · ${day}\n\n${summary}`,
+    `${composeDigestIntro(day)}\n\n${summary}`,
   );
 }
 
@@ -286,12 +315,7 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/digest") {
-      const body = await request.json().catch(() => ({}));
-      const custom = String(body.summary || body.text || "").trim();
-      const useAuto = !custom || body.auto === true;
-      const email = useAuto
-        ? await sendDailyDigest(env)
-        : await sendEmail(env, `[NPE] Daily status · ${pacificNow().day}`, custom);
+      const email = await sendDailyDigest(env);
       if (!email.ok) return json({ ok: false, email }, 502);
       return json({ ok: true, email });
     }
