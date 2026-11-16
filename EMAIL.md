@@ -16,11 +16,14 @@ Daily digest (always, all monitors up or down):
   → sendDailyDigest
   → same recipients
 
-Every alert email also appends the full monitor list
-(uptime + response time for each site).
+Every alert and digest email includes only the monitor results
+(uptime + response time for each site). No Status page, repo, or
+internal setup notes are appended.
 ```
 
 Email is sent **only** through Resend. There is no Mailchannels fallback and no parallel n8n alert path.
+
+Outbound messages are multipart (`text` + `html`) with the same monitor-only copy in both parts.
 
 ## English-only outbound copy
 

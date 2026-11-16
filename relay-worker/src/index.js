@@ -23,7 +23,6 @@ const ALERT_RECIPIENTS = [
   "REDACTED_OPS@example.com",
   "REDACTED_ALERTS@example.com",
 ];
-const STATUS_PAGE = "https://cavemanappsteam.github.io/npe-status/";
 const FROM_RESEND = {
   email: "REDACTED_FROM@example.com",
   name: "NPE Status",
@@ -65,8 +64,8 @@ export function alertKindFromText(text) {
 
 export function subjectFromText(text) {
   const kind = alertKindFromText(text);
-  if (kind === "up") return "[NPE] UP — monitor recovered";
-  if (kind === "down") return "[NPE] DOWN — monitor alert";
+  if (kind === "up") return "[NPE] UP / monitor recovered";
+  if (kind === "down") return "[NPE] DOWN / monitor alert";
   return "[NPE] Status alert";
 }
 
@@ -81,21 +80,30 @@ export function composeAlertBody(kind, summary) {
 }
 
 export function composeDigestIntro(day) {
-  return `NPE status · daily digest · ${day} · 09:00 Seattle time`;
+  return `NPE status / daily digest / ${day} / 09:00 Seattle time:`;
 }
 
-function emailBody(text) {
+export function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function composeEmailHtml(text) {
+  const body = escapeHtml(String(text || "").trim()).replace(/\n/g, "<br>\n");
   return [
-    String(text || "").trim(),
-    "",
-    `Status page: ${STATUS_PAGE}`,
-    `Repo: https://github.com/CavemanAppsTeam/npe-status`,
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111;">`,
+    `<div>${body}</div>`,
+    `</div>`,
   ].join("\n");
 }
 
-async function sendResend(env, subject, body) {
+async function sendResend(env, subject, text) {
   const key = String(env.RESEND_API_KEY || "").trim();
   if (!key) return { ok: false, skipped: "no-resend-key" };
+  const plain = String(text || "").trim();
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -106,7 +114,8 @@ async function sendResend(env, subject, body) {
       from: `${FROM_RESEND.name} <${FROM_RESEND.email}>`,
       to: ALERT_RECIPIENTS,
       subject,
-      text: body,
+      text: plain,
+      html: composeEmailHtml(plain),
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -115,8 +124,7 @@ async function sendResend(env, subject, body) {
 }
 
 async function sendEmail(env, subject, text) {
-  const body = emailBody(text);
-  return sendResend(env, subject, body);
+  return sendResend(env, subject, text);
 }
 
 const PACIFIC = "America/Los_Angeles";
@@ -168,8 +176,7 @@ async function githubRawJson(env, path) {
   return res.json().catch(() => null);
 }
 
-export const MONITOR_SUMMARY_HEADING =
-  "Monitors (production Core + Worker, probed from Seattle):";
+export const MONITOR_SUMMARY_HEADING = "Monitors:";
 
 async function buildStatusSummary(env) {
   const lines = [MONITOR_SUMMARY_HEADING];
@@ -183,11 +190,8 @@ async function buildStatusSummary(env) {
     if (up || rt) any = true;
   }
   if (!any) {
-    lines.push(
-      "(Could not load GitHub API metrics — set GITHUB_TOKEN on the Worker, or open the status page.)",
-    );
+    lines.push("Metrics unavailable.");
   }
-  lines.push("", `Status page: ${STATUS_PAGE}`);
   return lines.join("\n");
 }
 
@@ -196,7 +200,7 @@ async function sendDailyDigest(env) {
   const summary = await buildStatusSummary(env);
   return sendEmail(
     env,
-    `[NPE] Daily status · ${day}`,
+    `[NPE] Daily status / ${day}`,
     `${composeDigestIntro(day)}\n\n${summary}`,
   );
 }

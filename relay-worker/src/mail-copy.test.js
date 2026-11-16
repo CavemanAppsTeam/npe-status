@@ -5,14 +5,15 @@ import {
   alertKindFromText,
   composeAlertBody,
   composeDigestIntro,
+  composeEmailHtml,
   englishAlertLine,
   subjectFromText,
 } from "./index.js";
 
 describe("English alert subjects", () => {
   it("uses fixed UP / DOWN / generic English subjects", () => {
-    assert.equal(subjectFromText("Site is UP again"), "[NPE] UP — monitor recovered");
-    assert.equal(subjectFromText("Monitor DOWN"), "[NPE] DOWN — monitor alert");
+    assert.equal(subjectFromText("Site is UP again"), "[NPE] UP / monitor recovered");
+    assert.equal(subjectFromText("Monitor DOWN"), "[NPE] DOWN / monitor alert");
     assert.equal(subjectFromText("ping"), "[NPE] Status alert");
   });
 });
@@ -42,14 +43,37 @@ describe("English alert bodies", () => {
       "Monitor alert (DOWN).\n\nsummary",
     );
   });
+
+  it("keeps monitor-only copy without internal footers", () => {
+    const body = composeAlertBody("down", `${MONITOR_SUMMARY_HEADING}\n- Contact: uptime 100%, response 146 ms`);
+    assert.equal(MONITOR_SUMMARY_HEADING, "Monitors:");
+    assert.ok(!body.includes("Status page"));
+    assert.ok(!body.includes("Repo:"));
+    assert.ok(!body.includes("GITHUB_TOKEN"));
+    assert.ok(!body.includes("probed from Seattle"));
+  });
 });
 
-describe("Seattle digest copy", () => {
-  it("locks the summary heading and digest intro", () => {
-    assert.match(MONITOR_SUMMARY_HEADING, /probed from Seattle/);
+describe("Digest copy", () => {
+  it("locks the summary heading and digest intro with ASCII separators", () => {
+    assert.equal(MONITOR_SUMMARY_HEADING, "Monitors:");
     assert.equal(
       composeDigestIntro("2026-11-16"),
-      "NPE status · daily digest · 2026-11-16 · 09:00 Seattle time",
+      "NPE status / daily digest / 2026-11-16 / 09:00 Seattle time:",
     );
+    assert.ok(!composeDigestIntro("2026-11-16").includes("·"));
+    assert.ok(!composeDigestIntro("2026-11-16").includes("—"));
+  });
+});
+
+describe("HTML email body", () => {
+  it("renders monitor text without a logo", () => {
+    const plain = `${composeDigestIntro("2026-11-16")}\n\n${MONITOR_SUMMARY_HEADING}\n- Estimate: uptime 100%, response 149 ms`;
+    const html = composeEmailHtml(plain);
+    assert.ok(!html.includes("cavemanapps-logo"));
+    assert.ok(!html.includes("<img"));
+    assert.match(html, /Monitors:/);
+    assert.ok(!html.includes("Status page"));
+    assert.ok(!html.includes("Repo:"));
   });
 });
