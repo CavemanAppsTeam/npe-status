@@ -1,6 +1,6 @@
 /**
  * Public relay for Upptime custom webhooks (npe-status).
- * Stores alerts in KV and emails ALERT_RECIPIENTS via Resend.
+ * Stores alerts in KV and emails recipients via Resend.
  *
  * Auth: Authorization: Bearer <UPTIME_RELAY_TOKEN>
  * POST / or /ingest — ingest alert → English email + KV
@@ -15,18 +15,24 @@
  *
  * Outbound mail bodies are Worker-authored English only. Caller text is never pasted.
  *
- * Secrets (Wrangler): UPTIME_RELAY_TOKEN, RESEND_API_KEY, GITHUB_TOKEN
- * Local copies live outside git: [LOCAL_SECRETS_DIR]\.env
+ * Secrets (Wrangler): UPTIME_RELAY_TOKEN, RESEND_API_KEY, GITHUB_TOKEN,
+ *                     ALERT_TO, RESEND_FROM, RESEND_FROM_NAME
+ * Local copies live in a secrets file outside git (see scripts/sync-secrets.ps1).
  */
 
-const ALERT_RECIPIENTS = [
-  "REDACTED_OPS@example.com",
-  "REDACTED_ALERTS@example.com",
-];
-const FROM_RESEND = {
-  email: "REDACTED_FROM@example.com",
-  name: "NPE Status",
-};
+export function parseAlertRecipients(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function mailConfigFromEnv(env) {
+  const to = parseAlertRecipients(env.ALERT_TO);
+  const fromEmail = String(env.RESEND_FROM || "").trim();
+  const fromName = String(env.RESEND_FROM_NAME || "NPE Status").trim() || "NPE Status";
+  return { to, fromEmail, fromName };
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -103,6 +109,9 @@ export function composeEmailHtml(text) {
 async function sendResend(env, subject, text) {
   const key = String(env.RESEND_API_KEY || "").trim();
   if (!key) return { ok: false, skipped: "no-resend-key" };
+  const { to, fromEmail, fromName } = mailConfigFromEnv(env);
+  if (!to.length) return { ok: false, skipped: "no-alert-recipients" };
+  if (!fromEmail) return { ok: false, skipped: "no-resend-from" };
   const plain = String(text || "").trim();
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -111,8 +120,8 @@ async function sendResend(env, subject, text) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: `${FROM_RESEND.name} <${FROM_RESEND.email}>`,
-      to: ALERT_RECIPIENTS,
+      from: `${fromName} <${fromEmail}>`,
+      to,
       subject,
       text: plain,
       html: composeEmailHtml(plain),
@@ -244,7 +253,8 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "npe-uptime-relay", emailTo: ALERT_RECIPIENTS });
+      const { to } = mailConfigFromEnv(env);
+      return json({ ok: true, service: "npe-uptime-relay", recipientCount: to.length });
     }
 
     if (!authed(request, env)) return unauthorized();

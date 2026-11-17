@@ -28,7 +28,7 @@ With [Upptime](https://upptime.js.org), you can get your own unlimited and free 
 
 ## Email alerts (Resend)
 
-Failure webhooks and the daily digest are handled by the Worker in [`relay-worker/`](./relay-worker/) and documented in [`EMAIL.md`](./EMAIL.md). Secrets stay outside this repo at `[LOCAL_SECRETS_DIR]\.env`.
+Failure webhooks and the daily digest are handled by the Worker in [`relay-worker/`](./relay-worker/) and documented in [`EMAIL.md`](./EMAIL.md). Tokens and recipient emails stay in a local secrets file outside git; sync with `scripts/sync-secrets.ps1`.
 
 ## 📄 License
 

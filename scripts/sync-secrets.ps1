@@ -1,9 +1,9 @@
-# Push npe-status relay secrets from Desktop\services into Cloudflare Wrangler.
-# Secrets file (outside git): [LOCAL_SECRETS_DIR]\.env
+# Push npe-status relay secrets from the local secrets file into Cloudflare Wrangler.
+# Secrets file path (outside git): set NPE_STATUS_ENV or default below.
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$envFile = "[LOCAL_SECRETS_DIR]\.env"
+$envFile = if ($env:NPE_STATUS_ENV) { $env:NPE_STATUS_ENV } else { Join-Path $env:USERPROFILE "Desktop\services\npe-status\.env" }
 $wranglerConfig = Join-Path $repoRoot "relay-worker\wrangler.toml"
 
 if (-not (Test-Path -LiteralPath $envFile)) {
@@ -22,7 +22,14 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
   $map[$line.Substring(0, $i).Trim()] = $line.Substring($i + 1).Trim()
 }
 
-$required = @("UPTIME_RELAY_TOKEN", "RESEND_API_KEY", "GITHUB_TOKEN")
+$required = @(
+  "UPTIME_RELAY_TOKEN",
+  "RESEND_API_KEY",
+  "GITHUB_TOKEN",
+  "ALERT_TO",
+  "RESEND_FROM",
+  "RESEND_FROM_NAME"
+)
 foreach ($name in $required) {
   if (-not $map.ContainsKey($name) -or -not $map[$name]) {
     throw "Missing $name in $envFile"

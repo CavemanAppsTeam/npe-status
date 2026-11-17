@@ -8,8 +8,7 @@ Standalone email path for this repository. It does **not** depend on Larry-Brain
 Upptime (this repo, GitHub Actions)
   → POST https://npe-uptime-relay.gabriel-049.workers.dev/?token=…
   → Cloudflare Worker (relay-worker/) emails via Resend
-  → REDACTED_OPS@example.com
-  → REDACTED_ALERTS@example.com
+  → ops recipients from Worker env (ALERT_TO)
 
 Daily digest (always, all monitors up or down):
   Worker cron at 09:00 Seattle time (America/Los_Angeles)
@@ -35,19 +34,11 @@ The Worker authors every outbound subject and body in English. Webhook or API ca
 
 | Setting | Value |
 | --- | --- |
-| Domain | `cavemanapps.ia.br` (verified) |
-| From | `NPE Status <REDACTED_FROM@example.com>` |
-| To | `REDACTED_OPS@example.com`, `REDACTED_ALERTS@example.com` |
+| From / To | Worker secrets `RESEND_FROM`, `RESEND_FROM_NAME`, `ALERT_TO` (not stored in this repo) |
 
 ## Secrets (protected, outside git)
 
-Local file only:
-
-`[LOCAL_SECRETS_DIR]\.env`
-
-Contains: `UPTIME_RELAY_TOKEN`, `RESEND_API_KEY`, `GITHUB_TOKEN`.
-
-Sync to Cloudflare:
+Keep tokens and recipient emails in a local secrets file outside git. Sync with:
 
 ```powershell
 powershell -File scripts/sync-secrets.ps1
@@ -55,9 +46,11 @@ cd relay-worker
 npx wrangler deploy
 ```
 
+Required keys: `UPTIME_RELAY_TOKEN`, `RESEND_API_KEY`, `GITHUB_TOKEN`, `ALERT_TO`, `RESEND_FROM`, `RESEND_FROM_NAME`.
+
 ## GitHub Actions secrets (this repo)
 
 | Name | Purpose |
 | --- | --- |
 | `NOTIFICATION_CUSTOM_WEBHOOK` | `true` |
-| `NOTIFICATION_CUSTOM_WEBHOOK_URL` | `https://npe-uptime-relay.gabriel-049.workers.dev/?token=<UPTIME_RELAY_TOKEN>` |
+| `NOTIFICATION_CUSTOM_WEBHOOK_URL` | Relay URL with `?token=<UPTIME_RELAY_TOKEN>` (never commit the real token) |

@@ -7,6 +7,8 @@ import {
   composeDigestIntro,
   composeEmailHtml,
   englishAlertLine,
+  mailConfigFromEnv,
+  parseAlertRecipients,
   subjectFromText,
 } from "./index.js";
 
@@ -75,5 +77,22 @@ describe("HTML email body", () => {
     assert.match(html, /Monitors:/);
     assert.ok(!html.includes("Status page"));
     assert.ok(!html.includes("Repo:"));
+  });
+});
+
+describe("Mail config from env", () => {
+  it("parses comma-separated recipients and from fields", () => {
+    assert.deepEqual(parseAlertRecipients(" a@example.com , b@example.com "), [
+      "a@example.com",
+      "b@example.com",
+    ]);
+    const cfg = mailConfigFromEnv({
+      ALERT_TO: "ops@example.com,alerts@example.com",
+      RESEND_FROM: "alerts@example.com",
+      RESEND_FROM_NAME: "NPE Status",
+    });
+    assert.deepEqual(cfg.to, ["ops@example.com", "alerts@example.com"]);
+    assert.equal(cfg.fromEmail, "alerts@example.com");
+    assert.equal(cfg.fromName, "NPE Status");
   });
 });
