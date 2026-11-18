@@ -9,6 +9,7 @@ import {
   englishAlertLine,
   mailConfigFromEnv,
   parseAlertRecipients,
+  pickLatestDigestSent,
   subjectFromText,
 } from "./index.js";
 
@@ -94,5 +95,21 @@ describe("Mail config from env", () => {
     assert.deepEqual(cfg.to, ["ops@example.com", "alerts@example.com"]);
     assert.equal(cfg.fromEmail, "alerts@example.com");
     assert.equal(cfg.fromName, "NPE Status");
+  });
+});
+
+describe("Digest status helper", () => {
+  it("picks the latest digest-sent entry without PII", async () => {
+    const latest = await pickLatestDigestSent([
+      { name: "digest-sent:2026-11-16", value: "2026-11-16T17:00:01.000Z" },
+      { name: "digest-sent:2026-11-17", value: "2026-11-17T17:00:02.000Z" },
+      { name: "digest-sent:2026-11-15", value: "2026-11-15T17:00:00.000Z" },
+    ]);
+    assert.deepEqual(latest, {
+      day: "2026-11-17",
+      sentAt: "2026-11-17T17:00:02.000Z",
+      key: "digest-sent:2026-11-17",
+    });
+    assert.equal(await pickLatestDigestSent([]), null);
   });
 });

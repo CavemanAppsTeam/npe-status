@@ -24,11 +24,17 @@ Email is sent **only** through Resend. There is no Mailchannels fallback and no 
 
 Outbound messages are multipart (`text` + `html`) with the same monitor-only copy in both parts.
 
+Uptime probes themselves run on GitHub-hosted runners (not Seattle). See [docs/ops.md](docs/ops.md).
+
 ## English-only outbound copy
 
 The Worker authors every outbound subject and body in English. Webhook or API caller text is used only to classify the alert as UP, DOWN, or generic. Raw caller strings (including Portuguese Upptime secrets such as `NOTIFICATIONS_DOWN_MESSAGE` / `NOTIFICATIONS_UP_MESSAGE`) are never pasted into the email.
 
 `POST /digest` always sends the fixed English daily digest. Custom `summary` / `text` bodies are ignored.
+
+## Verify last digest
+
+Authenticated `GET /digest-status` returns the latest `digest-sent:*` marker from KV (`seattleDay`, `sentToday`, `lastDigest.sentAt`) with no recipient emails.
 
 ## Resend
 
@@ -46,11 +52,14 @@ cd relay-worker
 npx wrangler deploy
 ```
 
+`sync-secrets.ps1` finishes with `scripts/smoke-relay-health.ps1` (`GET /health`, `recipientCount >= 1`).
+
 Required keys: `UPTIME_RELAY_TOKEN`, `RESEND_API_KEY`, `GITHUB_TOKEN`, `ALERT_TO`, `RESEND_FROM`, `RESEND_FROM_NAME`.
 
 ## GitHub Actions secrets (this repo)
 
 | Name | Purpose |
 | --- | --- |
+| `GH_PAT` | Token Upptime uses to push history/graphs/site (see [docs/ops.md](docs/ops.md)) |
 | `NOTIFICATION_CUSTOM_WEBHOOK` | `true` |
 | `NOTIFICATION_CUSTOM_WEBHOOK_URL` | Relay URL with `?token=<UPTIME_RELAY_TOKEN>` (never commit the real token) |

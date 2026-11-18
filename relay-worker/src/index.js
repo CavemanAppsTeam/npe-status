@@ -8,8 +8,9 @@
  * POST /claim       — { ids: string[] } mark delivered
  * POST /email       — { text } classify up/down; send English alert email
  * POST /digest      — always send the English daily digest
+ * GET  /digest-status — last digest-sent KV timestamp (auth)
  * GET  /summary     — preview auto digest text
- * GET  /health      — ok
+ * GET  /health      — ok (includes recipientCount)
  * Cron              — 09:00 Seattle (America/Los_Angeles) daily digest
  *                     (UTC 16:00 and 17:00; sends only at local hour 9)
  *
@@ -214,6 +215,44 @@ async function sendDailyDigest(env) {
   );
 }
 
+async function markDigestSent(env, day, at = new Date().toISOString()) {
+  const key = `digest-sent:${day}`;
+  await env.ALERTS.put(key, at, { expirationTtl: 60 * 60 * 36 });
+  return { key, day, sentAt: at };
+}
+
+export async function pickLatestDigestSent(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  let latest = null;
+  for (const entry of list) {
+    const name = String(entry?.name || "");
+    const day = name.startsWith("digest-sent:") ? name.slice("digest-sent:".length) : "";
+    const sentAt = String(entry?.value || "").trim();
+    if (!day || !sentAt) continue;
+    if (!latest || sentAt > latest.sentAt || (sentAt === latest.sentAt && day > latest.day)) {
+      latest = { day, sentAt, key: name };
+    }
+  }
+  return latest;
+}
+
+async function getDigestStatus(env) {
+  const listed = await env.ALERTS.list({ prefix: "digest-sent:", limit: 30 });
+  const entries = [];
+  for (const key of listed.keys) {
+    const value = await env.ALERTS.get(key.name);
+    entries.push({ name: key.name, value: value || "" });
+  }
+  const latest = await pickLatestDigestSent(entries);
+  const { day } = pacificNow();
+  return {
+    ok: true,
+    seattleDay: day,
+    sentToday: Boolean(latest && latest.day === day),
+    lastDigest: latest,
+  };
+}
+
 async function listPending(env, limit = 50) {
   const listed = await env.ALERTS.list({ prefix: "pending:", limit });
   const out = [];
@@ -238,11 +277,7 @@ export default {
     if (await env.ALERTS.get(key)) return;
     const email = await sendDailyDigest(env);
     if (!email.ok) throw new Error("daily digest email failed");
-    ctx.waitUntil(
-      env.ALERTS.put(key, new Date().toISOString(), {
-        expirationTtl: 60 * 60 * 36,
-      }),
-    );
+    ctx.waitUntil(markDigestSent(env, day));
   },
 
   async fetch(request, env) {
@@ -331,7 +366,14 @@ export default {
     if (request.method === "POST" && url.pathname === "/digest") {
       const email = await sendDailyDigest(env);
       if (!email.ok) return json({ ok: false, email }, 502);
-      return json({ ok: true, email });
+      const { day } = pacificNow();
+      const digest = await markDigestSent(env, day);
+      return json({ ok: true, email, digest });
+    }
+
+    if (request.method === "GET" && url.pathname === "/digest-status") {
+      const status = await getDigestStatus(env);
+      return json(status);
     }
 
     if (request.method === "GET" && url.pathname === "/summary") {

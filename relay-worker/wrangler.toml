@@ -3,6 +3,16 @@ main = "src/index.js"
 compatibility_date = "2026-11-14"
 workers_dev = true
 
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = true
+
+[observability.issues]
+enabled = true
+
 [triggers]
 crons = ["0 16 * * *", "0 17 * * *"]
 

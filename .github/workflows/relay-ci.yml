@@ -26,3 +26,12 @@ jobs:
         run: node --check src/index.js
       - name: English copy tests
         run: node --test src/mail-copy.test.js
+      - name: Production health smoke
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        working-directory: .
+        run: |
+          body=$(curl -fsS "https://npe-uptime-relay.gabriel-049.workers.dev/health")
+          echo "$body"
+          echo "$body" | grep -q '"ok":true'
+          count=$(echo "$body" | sed -n 's/.*"recipientCount":\([0-9][0-9]*\).*/\1/p')
+          test -n "$count" && test "$count" -ge 1

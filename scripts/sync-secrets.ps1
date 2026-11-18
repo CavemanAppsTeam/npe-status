@@ -42,7 +42,14 @@ try {
     Write-Host "Uploading secret $name ..."
     $map[$name] | npx --yes wrangler secret put $name -c $wranglerConfig
   }
-  Write-Host "Done. Deploy with: npx wrangler deploy -c `"$wranglerConfig`""
+  Write-Host "Secrets uploaded. Running health smoke (secrets apply without redeploy) ..."
 } finally {
   Pop-Location
 }
+
+$smoke = Join-Path $PSScriptRoot "smoke-relay-health.ps1"
+if ($map.ContainsKey("RELAY_BASE_URL") -and $map["RELAY_BASE_URL"]) {
+  $env:RELAY_BASE_URL = $map["RELAY_BASE_URL"]
+}
+& $smoke
+Write-Host "Done. If Worker code changed, also run: npx wrangler deploy -c `"$wranglerConfig`""
